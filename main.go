@@ -16,36 +16,58 @@ import (
 const (
 	firstPeerRawAddress  = "/ip4/0.0.0.0/tcp/12300" //  /ip4/0.0.0.0/tcp/%d "0.0.0.0:12300"
 	secondPeerRawAddress = "/ip4/0.0.0.0/tcp/12351" //  /ip4/0.0.0.0/tcp/%d "0.0.0.0:12300"
-
+	protocol             = "/echo/1.0.0"
 )
 
 func main() {
 
 	// create first peer
-	firstPeerHost, firstPeerCancelFn := createHost(firstPeerRawAddress)
+	firstHost, firstPeerCancelFn := createHost(firstPeerRawAddress)
 	defer firstPeerCancelFn()
 
 	// create second peer
-	secondPeerHost, secondPeerCancelFn := createHost(secondPeerRawAddress)
+	secondHost, secondPeerCancelFn := createHost(secondPeerRawAddress)
 	defer secondPeerCancelFn()
 
 	// first peer: register handler for incoming traffic
-	firstPeerHost.SetStreamHandler("/echo/1.0.0", func(s network.Stream) {
+	firstHost.SetStreamHandler(protocol, func(s network.Stream) {
 		log.Println("first-peer: got new stream!!")
 	})
-	firstPeerFullAddr := getFullListingAddress(firstPeerHost)
+	firstPeerFullAddr := getFullListingAddress(firstHost)
 	log.Printf("first-peer: I am %s\n", firstPeerFullAddr)
 
 	// second peer: register handler for incoming traffic
-	secondPeerHost.SetStreamHandler("/echo/1.0.0", func(s network.Stream) {
+	secondHost.SetStreamHandler(protocol, func(s network.Stream) {
 		log.Println("second-peer: got new stream!!")
 	})
-	secondPeerFullAddr := getFullListingAddress(secondPeerHost)
+	secondPeerFullAddr := getFullListingAddress(secondHost)
 	log.Printf("second-peer: I am %s\n", secondPeerFullAddr)
 
-	connectHostAToHostB(firstPeerHost, secondPeerHost)
-	connectHostAToHostB(secondPeerHost, firstPeerHost)
+	connectHostAToHostB(firstHost, secondHost)
+	connectHostAToHostB(secondHost, firstHost)
 
+	streamToSecondHost, err := firstHost.NewStream(context.Background(), secondHost.ID(), protocol)
+	if err != nil {
+		panic(err)
+	}
+
+	streamToFirstHost, err := secondHost.NewStream(context.Background(), firstHost.ID(), protocol)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = streamToSecondHost.Write([]byte("hiiii its me!! (first send to second)"))
+	if err != nil {
+		panic(err)
+	}
+	streamToSecondHost.Close()
+
+	_, err = streamToFirstHost.Write([]byte("hi its me!! (second send to first)"))
+	if err != nil {
+		panic(err)
+	}
+
+	streamToFirstHost.Close()
 }
 func connectHostAToHostB(hostA host.Host, hostB host.Host) {
 	hostA.Peerstore().AddAddr(hostB.ID(), getFullListingAddress(hostB), peerstore.PermanentAddrTTL)
